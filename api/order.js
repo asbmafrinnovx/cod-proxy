@@ -14,18 +14,13 @@ export default async function handler(req, res) {
   }
 
   const SHOP  = 'm0tbd5-jp.myshopify.com';
-  const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
-
-  if (!TOKEN) {
-    res.status(500).json({ error: 'Token manquant dans Vercel' });
-    return;
-  }
+  const STOREFRONT_TOKEN = '662909a9ab3c75cb682824255fba7522';
 
   try {
     const { name, phone, address, city, variantId, note } = req.body;
 
     if (!name || !phone || !address || !variantId) {
-      res.status(400).json({ error: 'Champs manquants', received: { name, phone, address, variantId } });
+      res.status(400).json({ error: 'Champs manquants' });
       return;
     }
 
@@ -34,50 +29,52 @@ export default async function handler(req, res) {
     const fakeEmail = phone.replace(/\D/g, '') + '@cod.tawbahijabi.ma';
 
     const mutation = `
-      mutation draftOrderCreate($input: DraftOrderInput!) {
-        draftOrderCreate(input: $input) {
-          draftOrder { id name legacyResourceId }
+      mutation cartCreate($input: CartInput!) {
+        cartCreate(input: $input) {
+          cart {
+            id
+            checkoutUrl
+          }
           userErrors { field message }
         }
       }`;
 
     const variables = {
       input: {
-        lineItems: [{
-          variantId: 'gid://shopify/ProductVariant/' + variantId,
+        lines: [{
+          merchandiseId: 'gid://shopify/ProductVariant/' + variantId,
           quantity: 1
         }],
-        email: fakeEmail,
-        shippingAddress: {
-          firstName,
-          lastName,
-          address1: address,
-          city: city || address,
+        buyerIdentity: {
+          email: fakeEmail,
+          phone: phone,
           countryCode: 'MA',
-          phone
+          deliveryAddressPreferences: [{
+            deliveryAddress: {
+              firstName,
+              lastName,
+              address1: address,
+              city: city || address,
+              country: 'Morocco',
+              phone: phone
+            }
+          }]
         },
-        billingAddress: {
-          firstName,
-          lastName,
-          address1: address,
-          city: city || address,
-          countryCode: 'MA',
-          phone
-        },
-        note: 'TEL: ' + phone + ' | NOM: ' + name + ' | VILLE: ' + (city || '') + (note ? ' | NOTE: ' + note : ''),
-        tags: 'COD,telephone',
-        customAttributes: [
+        note: 'CLIENT: ' + name + ' | TEL: ' + phone + ' | VILLE: ' + (city || '') + ' | ADRESSE: ' + address + (note ? ' | NOTE: ' + note : ''),
+        attributes: [
           { key: 'Telephone', value: phone },
-          { key: 'Methode', value: 'Cash on Delivery' }
+          { key: 'Nom', value: name },
+          { key: 'Ville', value: city || '' },
+          { key: 'Methode de paiement', value: 'Cash on Delivery' }
         ]
       }
     };
 
-    const shopifyResp = await fetch(`https://${SHOP}/admin/api/2024-01/graphql.json`, {
+    const shopifyResp = await fetch(`https://${SHOP}/api/2024-01/graphql.json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': TOKEN
+        'X-Shopify-Storefront-Access-Token': STOREFRONT_TOKEN
       },
       body: JSON.stringify({ query: mutation, variables })
     });
@@ -89,7 +86,6 @@ export default async function handler(req, res) {
     } catch (e) {
       res.status(500).json({
         error: 'Reponse Shopify invalide',
-        status: shopifyResp.status,
         body: responseText.substring(0, 500)
       });
       return;
@@ -97,36 +93,33 @@ export default async function handler(req, res) {
 
     if (data.errors) {
       res.status(500).json({
-        error: 'Shopify GraphQL error: ' + JSON.stringify(data.errors),
-        details: data.errors,
-        status: shopifyResp.status
+        error: 'Shopify error: ' + JSON.stringify(data.errors),
+        details: data.errors
       });
       return;
     }
 
-    const result = data.data && data.data.draftOrderCreate;
+    const result = data.data && data.data.cartCreate;
 
     if (result && result.userErrors && result.userErrors.length > 0) {
-      res.status(400).json({ error: result.userErrors[0].message, allErrors: result.userErrors });
+      res.status(400).json({ error: result.userErrors[0].message });
       return;
     }
 
-    if (result && result.draftOrder) {
+    if (result && result.cart) {
       res.status(200).json({
         success: true,
-        orderName: result.draftOrder.name,
-        orderId: result.draftOrder.legacyResourceId
+        checkoutUrl: result.cart.checkoutUrl,
+        cartId: result.cart.id
       });
       return;
     }
 
     res.status(500).json({
-      error: 'Reponse inattendue: ' + JSON.stringify(data).substring(0, 300),
-      fullResponse: data,
-      status: shopifyResp.status
+      error: 'Reponse inattendue: ' + JSON.stringify(data).substring(0, 300)
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Erreur serveur', stack: err.stack });
+    res.status(500).json({ error: err.message || 'Erreur serveur' });
   }
 }
