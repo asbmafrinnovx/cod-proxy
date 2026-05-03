@@ -16,11 +16,16 @@ export default async function handler(req, res) {
   const SHOP  = 'm0tbd5-jp.myshopify.com';
   const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
 
+  if (!TOKEN) {
+    res.status(500).json({ error: 'Token manquant dans Vercel' });
+    return;
+  }
+
   try {
     const { name, phone, address, city, variantId, note } = req.body;
 
     if (!name || !phone || !address || !variantId) {
-      res.status(400).json({ error: 'Champs manquants' });
+      res.status(400).json({ error: 'Champs manquants', received: { name, phone, address, variantId } });
       return;
     }
 
@@ -62,8 +67,8 @@ export default async function handler(req, res) {
         note: 'TEL: ' + phone + ' | NOM: ' + name + ' | VILLE: ' + (city || '') + (note ? ' | NOTE: ' + note : ''),
         tags: 'COD,telephone',
         customAttributes: [
-          { key: 'Téléphone', value: phone },
-          { key: 'Méthode', value: 'Cash on Delivery' }
+          { key: 'Telephone', value: phone },
+          { key: 'Methode', value: 'Cash on Delivery' }
         ]
       }
     };
@@ -77,11 +82,32 @@ export default async function handler(req, res) {
       body: JSON.stringify({ query: mutation, variables })
     });
 
-    const data = await shopifyResp.json();
+    const responseText = await shopifyResp.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      res.status(500).json({
+        error: 'Reponse Shopify invalide',
+        status: shopifyResp.status,
+        body: responseText.substring(0, 500)
+      });
+      return;
+    }
+
+    if (data.errors) {
+      res.status(500).json({
+        error: 'Shopify GraphQL error: ' + JSON.stringify(data.errors),
+        details: data.errors,
+        status: shopifyResp.status
+      });
+      return;
+    }
+
     const result = data.data && data.data.draftOrderCreate;
 
     if (result && result.userErrors && result.userErrors.length > 0) {
-      res.status(400).json({ error: result.userErrors[0].message });
+      res.status(400).json({ error: result.userErrors[0].message, allErrors: result.userErrors });
       return;
     }
 
@@ -94,9 +120,13 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(500).json({ error: 'Réponse inattendue de Shopify' });
+    res.status(500).json({
+      error: 'Reponse inattendue: ' + JSON.stringify(data).substring(0, 300),
+      fullResponse: data,
+      status: shopifyResp.status
+    });
 
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Erreur serveur' });
+    res.status(500).json({ error: err.message || 'Erreur serveur', stack: err.stack });
   }
 }
