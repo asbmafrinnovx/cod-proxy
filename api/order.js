@@ -26,7 +26,8 @@ export default async function handler(req, res) {
 
     const firstName = name.split(' ')[0];
     const lastName  = name.split(' ').slice(1).join(' ') || '.';
-    const fakeEmail = phone.replace(/\D/g, '') + '@cod.tawbahijabi.ma';
+    const cleanPhone = phone.replace(/\D/g, '');
+    const fakeEmail = 'cod' + cleanPhone + '@gmail.com';
 
     const mutation = `
       mutation cartCreate($input: CartInput!) {
