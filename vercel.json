@@ -1,7 +1,1 @@
-{
-  "functions": {
-    "api/order.js": {
-      "maxDuration": 10
-    }
-  }
-}
+{}
